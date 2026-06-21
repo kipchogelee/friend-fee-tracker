@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>朋友墊支記錄</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; min-height: 100vh; padding: 20px; }
+    .container { max-width: 600px; margin: 0 auto; }
+
+    .balance-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 16px; padding: 30px; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3); }
+    .balance-label { font-size: 14px; opacity: 0.9; margin-bottom: 8px; }
+    .balance-amount { font-size: 42px; font-weight: bold; }
+    .balance-amount.positive { color: #a8edea; }
+    .balance-amount.negative { color: #ff6b6b; }
+
+    .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .card h3 { font-size: 16px; color: #667eea; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+    .form-row { display: flex; gap: 10px; margin-bottom: 12px; }
+    .form-row.full { flex-direction: column; }
+    input, textarea, select { width: 100%; padding: 12px; border: 2px solid #e8e8e8; border-radius: 8px; font-size: 16px; transition: border-color 0.2s; }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: #667eea; }
+    input[type="number"] { text-align: right; }
+
+    .btn-row { display: flex; gap: 10px; }
+    button { flex: 1; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 0.1s, box-shadow 0.2s; }
+    button:active { transform: scale(0.98); }
+    .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+    .btn-primary:hover { box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); }
+    .btn-danger { background: #ff6b6b; color: white; }
+    .btn-success { background: #51cf66; color: white; }
+    .btn-secondary { background: #e8e8e8; color: #666; }
+
+    .history-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid #f0f0f0; }
+    .history-item:last-child { border-bottom: none; }
+    .history-info { flex: 1; }
+    .history-desc { font-weight: 500; margin-bottom: 4px; }
+    .history-meta { font-size: 13px; color: #999; }
+    .history-amount { font-weight: bold; font-size: 16px; }
+    .history-amount.expense { color: #ff6b6b; }
+    .history-amount.repayment { color: #51cf66; }
+    .history-actions { display: flex; gap: 8px; margin-left: 12px; }
+    .btn-icon { padding: 6px 12px; font-size: 13px; border-radius: 6px; flex: none; }
+    .btn-delete { background: #ff6b6b; color: white; }
+
+    .empty { text-align: center; color: #999; padding: 40px 0; }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+
+    .tab-bar { display: flex; background: white; border-radius: 12px; padding: 6px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .tab { flex: 1; padding: 12px; text-align: center; border-radius: 8px; font-weight: 600; color: #999; cursor: pointer; transition: all 0.2s; }
+    .tab.active { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+
+    .section { display: none; }
+    .section.active { display: block; }
+
+    .clear-btn { text-align: center; margin-top: 20px; }
+    .clear-btn button { background: transparent; color: #999; border: 1px solid #ddd; padding: 10px 20px; font-size: 14px; }
+    .clear-btn button:hover { color: #ff6b6b; border-color: #ff6b6b; }
+
+    .friend-name { text-align: center; margin-bottom: 20px; }
+    .friend-name input { text-align: center; font-size: 20px; font-weight: bold; border: none; border-bottom: 2px dashed #ddd; border-radius: 0; padding: 8px; background: transparent; }
+    .friend-name input:focus { border-color: #667eea; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="balance-card">
+      <div class="balance-label">朋友欠你</div>
+      <div class="balance-amount" id="balance">$0.00</div>
+    </div>
+
+    <div class="friend-name">
+      <input type="text" id="friendName" placeholder="朋友名稱" onchange="saveFriendName()">
+    </div>
+
+    <div class="tab-bar">
+      <div class="tab active" onclick="showTab('record')">記錄</div>
+      <div class="tab" onclick="showTab('history')">歷史</div>
+    </div>
+
+    <div class="section active" id="tab-record">
+      <div class="card">
+        <h3>💸 墊支</h3>
+        <div class="form-row">
+          <input type="number" id="expenseAmount" placeholder="金額" min="0" step="0.01">
+        </div>
+        <div class="form-row full">
+          <textarea id="expenseDesc" placeholder="備註（买了什麼？）" rows="2"></textarea>
+        </div>
+        <div class="form-row">
+          <input type="date" id="expenseDate">
+        </div>
+        <button class="btn-primary" onclick="addExpense()">記錄墊支</button>
+      </div>
+
+      <div class="card">
+        <h3>💰 還款</h3>
+        <div class="form-row">
+          <input type="number" id="repayAmount" placeholder="金額" min="0" step="0.01">
+        </div>
+        <div class="form-row full">
+          <textarea id="repayDesc" placeholder="備註" rows="2"></textarea>
+        </div>
+        <div class="form-row">
+          <input type="date" id="repayDate">
+        </div>
+        <button class="btn-success" onclick="addRepayment()">記錄還款</button>
+      </div>
+    </div>
+
+    <div class="section" id="tab-history">
+      <div class="card">
+        <h3>📋 交易記錄</h3>
+        <div id="historyList"></div>
+      </div>
+      <div class="clear-btn">
+        <button onclick="exportData()">📤 匯出資料</button>
+        <button onclick="document.getElementById('importFile').click()">📥 匯入資料</button>
+        <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'friendFeeTracker';
+    let transactions = [];
+
+    // Init
+    document.addEventListener('DOMContentLoaded', () => {
+      loadData();
+      document.getElementById('expenseDate').valueAsDate = new Date();
+      document.getElementById('repayDate').valueAsDate = new Date();
+    });
+
+    function loadData() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const data = JSON.parse(saved);
+        transactions = data.transactions || [];
+        document.getElementById('friendName').value = data.friendName || '';
+      }
+      render();
+    }
+
+    function saveData() {
+      const data = {
+        friendName: document.getElementById('friendName').value,
+        transactions: transactions
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    function saveFriendName() {
+      saveData();
+    }
+
+    function addExpense() {
+      const amount = parseFloat(document.getElementById('expenseAmount').value);
+      const desc = document.getElementById('expenseDesc').value.trim();
+      const date = document.getElementById('expenseDate').value;
+
+      if (!amount || amount <= 0) { alert('請輸入有效金額'); return; }
+      if (!date) { alert('請選擇日期'); return; }
+
+      transactions.unshift({
+        type: 'expense',
+        amount: amount,
+        desc: desc || '墊支',
+        date: date,
+        id: Date.now()
+      });
+
+      document.getElementById('expenseAmount').value = '';
+      document.getElementById('expenseDesc').value = '';
+      document.getElementById('expenseDate').valueAsDate = new Date();
+
+      saveData();
+      render();
+    }
+
+    function addRepayment() {
+      const amount = parseFloat(document.getElementById('repayAmount').value);
+      const desc = document.getElementById('repayDesc').value.trim();
+      const date = document.getElementById('repayDate').value;
+
+      if (!amount || amount <= 0) { alert('請輸入有效金額'); return; }
+      if (!date) { alert('請選擇日期'); return; }
+
+      transactions.unshift({
+        type: 'repayment',
+        amount: amount,
+        desc: desc || '還款',
+        date: date,
+        id: Date.now()
+      });
+
+      document.getElementById('repayAmount').value = '';
+      document.getElementById('repayDesc').value = '';
+      document.getElementById('repayDate').valueAsDate = new Date();
+
+      saveData();
+      render();
+    }
+
+    function deleteTransaction(id) {
+      if (!confirm('確定刪除？')) return;
+      transactions = transactions.filter(t => t.id !== id);
+      saveData();
+      render();
+    }
+
+    function render() {
+      // Calculate balance
+      let balance = 0;
+      transactions.forEach(t => {
+        if (t.type === 'expense') balance += t.amount;
+        else balance -= t.amount;
+      });
+
+      const balanceEl = document.getElementById('balance');
+      balanceEl.textContent = '$' + balance.toFixed(2);
+      balanceEl.className = 'balance-amount ' + (balance >= 0 ? 'positive' : 'negative');
+
+      // Render history
+      const listEl = document.getElementById('historyList');
+      if (transactions.length === 0) {
+        listEl.innerHTML = '<div class="empty"><div class="empty-icon">📭</div>暫無記錄</div>';
+        return;
+      }
+
+      listEl.innerHTML = transactions.map(t => `
+        <div class="history-item">
+          <div class="history-info">
+            <div class="history-desc">${escapeHtml(t.desc)}</div>
+            <div class="history-meta">${t.date} · ${t.type === 'expense' ? '墊支' : '還款'}</div>
+          </div>
+          <div class="history-amount ${t.type}">
+            ${t.type === 'expense' ? '+' : '-'}$${t.amount.toFixed(2)}
+          </div>
+          <div class="history-actions">
+            <button class="btn-icon btn-delete" onclick="deleteTransaction(${t.id})">刪</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function showTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      if (tab === 'record') {
+        document.querySelector('.tab').classList.add('active');
+        document.getElementById('tab-record').classList.add('active');
+      } else {
+        document.querySelectorAll('.tab')[1].classList.add('active');
+        document.getElementById('tab-history').classList.add('active');
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function exportData() {
+      const data = {
+        friendName: document.getElementById('friendName').value,
+        transactions: transactions,
+        exportDate: new Date().toISOString()
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'friend-fee-backup.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function importData(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (data.transactions) {
+            if (confirm('匯入後會取代現有資料，確定嗎？')) {
+              transactions = data.transactions;
+              document.getElementById('friendName').value = data.friendName || '';
+              saveData();
+              render();
+              alert('匯入成功！');
+            }
+          } else {
+            alert('檔案格式不正確');
+          }
+        } catch (err) {
+          alert('匯入失敗：' + err.message);
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = '';
+    }
+  </script>
+</body>
+</html>
