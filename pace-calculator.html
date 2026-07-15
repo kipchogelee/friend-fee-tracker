@@ -1,0 +1,1536 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏃 跑步配速計算器</title>
+    <style>
+        /* ====== CSS Variables 主題系統 ====== */
+        :root {
+            --bg-start: #0f0c29;
+            --bg-mid:   #302b63;
+            --bg-end:   #24243e;
+            --card-bg:   rgba(255,255,255,0.06);
+            --card-border: rgba(255,255,255,0.10);
+            --blur:      blur(10px);
+            --text:      #e0e0e0;
+            --text-dim:  #888;
+            --text-mid:  #bbb;
+            --accent:    #6c5ce7;
+            --accent-lt: #a29bfe;
+            --green:     #00b894;
+            --yellow:    #fdcb6e;
+            --red:       #ff7675;
+            --blue:      #74b9ff;
+            --radius:    16px;
+            --radius-sm: 10px;
+            --radius-xs:  8px;
+            --font-mono:  'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, var(--bg-start), var(--bg-mid), var(--bg-end));
+            color: var(--text);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { text-align: center; font-size: 1.8em; margin-bottom: 8px; }
+        .subtitle { text-align: center; color: var(--text-dim); margin-bottom: 30px; font-size: 0.9em; }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 20px;
+            backdrop-filter: var(--blur);
+        }
+        .card h2 {
+            font-size: 1.15em;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* === 課表區域 === */
+        .schedule-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+        .tab-btn {
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.15);
+            background: transparent;
+            color: var(--text-mid);
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover, .tab-btn.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .tab-btn.rest { opacity: 0.4; }
+
+        .schedule-content {
+            background: rgba(0,0,0,0.2);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            font-size: 0.95em;
+            line-height: 1.8;
+        }
+        .segment {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: var(--radius-xs);
+            margin-bottom: 4px;
+            transition: background 0.2s;
+            cursor: pointer;
+        }
+        .segment:hover { background: rgba(108,92,231,0.15); }
+        .segment .desc { color: var(--text-mid); }
+        .segment .pace { color: var(--accent-lt); font-weight: 600; font-variant-numeric: tabular-nums; }
+        .segment .pace small { color: #666; font-weight: 400; margin-left: 4px; }
+        .highlight { color: var(--yellow); }
+
+        /* === 計算器 === */
+        .calc-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        @media (max-width: 600px) { .calc-grid { grid-template-columns: 1fr; } }
+
+        .input-group { display: flex; flex-direction: column; gap: 6px; }
+        .input-group label {
+            font-size: 0.85em;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .input-group input,
+        .input-group select {
+            padding: 12px 14px;
+            border-radius: var(--radius-sm);
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.05);
+            color: var(--text);
+            font-size: 1.05em;
+            font-variant-numeric: tabular-nums;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-group input:focus,
+        .input-group select:focus { border-color: var(--accent); }
+        .input-group select option { background: #2d2d44; }
+        .input-group input.invalid { border-color: var(--red); }
+
+        .btn-calc {
+            grid-column: 1 / -1;
+            padding: 14px;
+            border-radius: 12px;
+            border: none;
+            background: linear-gradient(135deg, var(--accent), var(--accent-lt));
+            color: #fff;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+            margin-top: 8px;
+        }
+        .btn-calc:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(108,92,231,0.4);
+        }
+        .btn-calc:active { transform: translateY(0); }
+
+        /* === 結果 === */
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+        .result-item {
+            background: rgba(0,0,0,0.25);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+        .result-item .value {
+            font-size: 1.6em;
+            font-weight: 700;
+            color: var(--accent-lt);
+            font-variant-numeric: tabular-nums;
+            margin-bottom: 4px;
+        }
+        .result-item .label { font-size: 0.8em; color: var(--text-dim); }
+        .result-item.green .value { color: var(--green); }
+        .result-item.yellow .value { color: var(--yellow); }
+
+        /* === 額外工具 === */
+        .tools-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        @media (max-width: 600px) { .tools-grid { grid-template-columns: 1fr; } }
+
+        /* === 設定 === */
+        .settings-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .settings-row label { font-size: 0.9em; color: var(--text-dim); white-space: nowrap; }
+        .settings-row input {
+            width: 80px;
+            padding: 8px 10px;
+            border-radius: var(--radius-xs);
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.05);
+            color: var(--text);
+            font-size: 0.95em;
+            outline: none;
+            text-align: center;
+        }
+        .settings-row input:focus { border-color: var(--accent); }
+
+        .section-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 16px 0 12px;
+            color: #555;
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .section-divider::before,
+        .section-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: rgba(255,255,255,0.08);
+        }
+
+        .zone-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+        .zone-easy     { background: rgba(0,184,148,0.2); color: var(--green); }
+        .zone-tempo    { background: rgba(108,92,231,0.2); color: var(--accent-lt); }
+        .zone-interval { background: rgba(253,203,110,0.2); color: var(--yellow); }
+        .zone-recovery { background: rgba(116,185,255,0.2); color: var(--blue); }
+        .zone-long     { background: rgba(255,118,117,0.2); color: var(--red); }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translate(-50%, 10px); }
+            to   { opacity: 1; transform: translate(-50%, 0); }
+        }
+
+        .last-saved { font-size: 0.78em; color: #555; margin-top: 8px; }
+
+        /* === 貼上課表 === */
+        .paste-area {
+            width: 100%;
+            min-height: 160px;
+            padding: 14px;
+            border-radius: var(--radius-sm);
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.05);
+            color: var(--text);
+            font-size: 0.92em;
+            line-height: 1.7;
+            resize: vertical;
+            outline: none;
+            font-family: inherit;
+        }
+        .paste-area:focus { border-color: var(--accent); }
+        .paste-area::placeholder { color: #555; }
+
+        .paste-hint {
+            font-size: 0.78em;
+            color: #555;
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+
+        .parse-status {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: var(--radius-xs);
+            font-size: 0.82em;
+            margin-top: 10px;
+            font-weight: 600;
+        }
+        .parse-ok   { background: rgba(0,184,148,0.15); color: var(--green); }
+        .parse-warn { background: rgba(253,203,110,0.15); color: var(--yellow); }
+
+        .btn-green {
+            grid-column: auto;
+            margin-top: 0;
+            padding: 10px 24px;
+            font-size: 0.9em;
+            background: linear-gradient(135deg, var(--green), #00cec9);
+        }
+        .btn-danger {
+            grid-column: auto;
+            margin-top: 0;
+            padding: 8px 18px;
+            font-size: 0.85em;
+            background: rgba(255,118,117,0.3);
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🏃 跑步配速計算器</h1>
+    <p class="subtitle">Pace Calculator — 貼上課表 → 自動解析配速</p>
+
+    <!-- ====== 貼上課表 ====== -->
+    <div class="card">
+        <h2>📋 貼上本週課表</h2>
+        <textarea class="paste-area" id="pasteInput" placeholder="直接 copy & paste 你的課表，例如：
+
+星期一 400(1'28)R1'30+200(90%)R5'x4-5
+星期二 rest day
+星期三 jog10'+tempo 20'+10'jog
+星期四 30'jog
+星期五 60'(hr135)
+星期六 18-20km(maf180)"></textarea>
+        <div class="paste-hint">
+            ✅ 支援格式：400(1'28)、R1'30（休息）、x4-5（組數）、jog10'、hr135、maf180<br>
+            ✅ 可以只貼有改的日子，未填的日子會保留上週內容
+        </div>
+        <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+            <button class="btn-calc" id="btnParse">📝 解析課表</button>
+            <button class="btn-calc btn-green" id="btnSample">📋 載入範例</button>
+        </div>
+        <div id="parseStatus"></div>
+    </div>
+
+    <!-- ====== 每週課表 ====== -->
+    <div class="card">
+        <h2>📅 每週課表</h2>
+        <div class="schedule-tabs" id="scheduleTabs"></div>
+        <div class="schedule-content" id="scheduleContent"></div>
+    </div>
+
+    <!-- ====== 設定 ====== -->
+    <div class="card">
+        <h2>⚙️ 參數設定</h2>
+        <div class="settings-row">
+            <label for="mafAge">MAF 年齡：</label>
+            <input type="number" id="mafAge" value="30" min="10" max="100">
+            <span>→ MAF HR = <span id="mafHR">150</span> bpm</span>
+        </div>
+        <div class="settings-row" style="margin-top:12px">
+            <label for="rep400Target">星期一 400m 目標：</label>
+            <input type="text" id="rep400Target" value="1'28" placeholder="如 1'28">
+            <label for="rep400Sets">重複組數：</label>
+            <input type="number" id="rep400Sets" value="4" min="1" max="10">
+        </div>
+        <div class="settings-row" style="margin-top:12px">
+            <label for="lsdDistance">星期六/日 LSD 距離：</label>
+            <input type="number" id="lsdDistance" value="18" min="1" max="60" step="1">
+            <span>km</span>
+        </div>
+        <div class="last-saved" id="lastSaved"></div>
+        <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn-calc btn-danger" id="btnClear">🗑️ 清除課表</button>
+        </div>
+    </div>
+
+    <!-- ====== 課表歷史 ====== -->
+    <div class="card">
+        <h2>📅 課表歷史 <small style="font-size:0.7em;color:#666;font-weight:400">（自動保存最近 26 週）</small></h2>
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+            <button class="btn-calc" style="font-size:0.9em;padding:10px 20px" id="btnSaveHistory">💾 儲存本週課表</button>
+        </div>
+        <div id="historyList"></div>
+    </div>
+
+    <!-- ====== 配速計算器 ====== -->
+    <div class="card">
+        <h2>🔢 配速計算器</h2>
+        <div class="calc-grid">
+            <div class="input-group">
+                <label for="calcDist">距離</label>
+                <div style="display:flex;gap:8px">
+                    <input type="number" id="calcDist" placeholder="距離" step="any" min="0">
+                    <select id="calcDistUnit" style="width:80px">
+                        <option value="km">km</option>
+                        <option value="m">m</option>
+                        <option value="mi">mi</option>
+                    </select>
+                </div>
+            </div>
+            <div class="input-group">
+                <label for="calcTimeMin">時間</label>
+                <div style="display:flex;gap:8px">
+                    <input type="number" id="calcTimeMin" placeholder="分鐘" min="0" style="width:50%">
+                    <input type="number" id="calcTimeSec" placeholder="秒" min="0" max="59" style="width:50%">
+                </div>
+            </div>
+            <button class="btn-calc" id="btnCalculate">計算配速 →</button>
+        </div>
+        <div class="section-divider">計算結果</div>
+        <div class="result-grid" id="calcResults" style="display:none">
+            <div class="result-item green">
+                <div class="value" id="resPace">-</div>
+                <div class="label">配速 (min/km)</div>
+            </div>
+            <div class="result-item">
+                <div class="value" id="resSpeed">-</div>
+                <div class="label">速度 (km/h)</div>
+            </div>
+            <div class="result-item yellow">
+                <div class="value" id="resTime">-</div>
+                <div class="label">總時間</div>
+            </div>
+            <div class="result-item">
+                <div class="value" id="resPaceMi">-</div>
+                <div class="label">配速 (min/mi)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====== 配速換算 ====== -->
+    <div class="card">
+        <h2>🔄 配速 ↔ 速度換算</h2>
+        <div class="tools-grid">
+            <div>
+                <div class="input-group">
+                    <label for="p2sMin">配速 (min/km)</label>
+                    <div style="display:flex;gap:8px">
+                        <input type="number" id="p2sMin" placeholder="分" min="0">
+                        <input type="number" id="p2sSec" placeholder="秒" min="0" max="59">
+                    </div>
+                </div>
+                <div style="margin-top:10px;font-size:1.3em;color:var(--green)" id="p2sResult">— km/h</div>
+            </div>
+            <div>
+                <div class="input-group">
+                    <label for="s2pSpeed">速度 (km/h)</label>
+                    <input type="number" id="s2pSpeed" placeholder="速度" min="0" step="any">
+                </div>
+                <div style="margin-top:10px;font-size:1.3em;color:var(--accent-lt)" id="s2pResult">— min/km</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====== 預估時間 ====== -->
+    <div class="card">
+        <h2>⏱️ 比賽預估時間</h2>
+        <div class="tools-grid">
+            <div class="input-group">
+                <label for="racePaceMin">目標配速 (min/km)</label>
+                <div style="display:flex;gap:8px">
+                    <input type="number" id="racePaceMin" placeholder="分" min="0">
+                    <input type="number" id="racePaceSec" placeholder="秒" min="0" max="59">
+                </div>
+            </div>
+            <div class="input-group">
+                <label for="raceDistance">比賽距離</label>
+                <select id="raceDistance">
+                    <option value="5">5 km</option>
+                    <option value="10">10 km</option>
+                    <option value="21.0975" selected>半馬 (21.1 km)</option>
+                    <option value="42.195">全馬 (42.2 km)</option>
+                </select>
+            </div>
+        </div>
+        <div style="margin-top:14px;text-align:center;font-size:1.5em;font-weight:700;color:var(--yellow)" id="raceResult">—</div>
+    </div>
+
+    <!-- ====== 等效比賽時間 ====== -->
+    <div class="card">
+        <h2>🏆 等效比賽時間（Riegel 公式）</h2>
+        <p style="font-size:0.82em;color:var(--text-dim);margin-bottom:14px">輸入一個已知比賽成績，估算其他距離的等效成績（公式：T₂ = T₁ × (D₂/D₁)^1.06）</p>
+        <div class="tools-grid">
+            <div class="input-group">
+                <label for="riegelDist1">已知距離</label>
+                <select id="riegelDist1">
+                    <option value="5">5 km</option>
+                    <option value="10">10 km</option>
+                    <option value="21.0975" selected>半馬 (21.1 km)</option>
+                    <option value="42.195">全馬 (42.2 km)</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label for="riegelH">已知成績時間</label>
+                <div style="display:flex;gap:8px">
+                    <input type="number" id="riegelH" placeholder="時" min="0" style="width:33%">
+                    <input type="number" id="riegelM" placeholder="分" min="0" style="width:33%">
+                    <input type="number" id="riegelS" placeholder="秒" min="0" max="59" style="width:33%">
+                </div>
+            </div>
+        </div>
+        <div id="riegelResults" style="margin-top:16px"></div>
+    </div>
+
+    <!-- ====== 分程配速計算器 ====== -->
+    <div class="card">
+        <h2>📐 分程配速計算器</h2>
+        <p style="font-size:0.82em;color:var(--text-dim);margin-bottom:14px">輸入目標時間與距離，自動計算每公里（或每英里）應維持的配速</p>
+        <div class="tools-grid">
+            <div class="input-group">
+                <label for="splitH">目標時間</label>
+                <div style="display:flex;gap:8px">
+                    <input type="number" id="splitH" placeholder="時" min="0" style="width:33%">
+                    <input type="number" id="splitM" placeholder="分" min="0" style="width:33%">
+                    <input type="number" id="splitS" placeholder="秒" min="0" max="59" style="width:33%">
+                </div>
+            </div>
+            <div class="input-group">
+                <label for="splitDist">距離</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <input type="number" id="splitDist" value="10" min="0.1" step="any" style="flex:1">
+                    <select id="splitUnit">
+                        <option value="km">km</option>
+                        <option value="mi">mi</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div id="splitResult" style="margin-top:14px;text-align:center;font-size:1.3em;font-weight:700;color:var(--accent-lt);display:none"></div>
+        <div id="splitTable" style="margin-top:12px;display:none">
+            <div class="section-divider">每公里配速分程</div>
+            <div id="splitRows"></div>
+        </div>
+    </div>
+
+    <!-- ====== 配速區間計算器 ====== -->
+    <div class="card">
+        <h2>🎯 配速區間計算器</h2>
+        <p style="font-size:0.82em;color:var(--text-dim);margin-bottom:14px">輸入一個參考配速（如閾值配速），自動計算各訓練類型的配速區間</p>
+        <div class="tools-grid">
+            <div class="input-group">
+                <label for="zonePaceMin">參考配速 (min/km)</label>
+                <div style="display:flex;gap:8px">
+                    <input type="number" id="zonePaceMin" placeholder="分" min="0">
+                    <input type="number" id="zonePaceSec" placeholder="秒" min="0" max="59">
+                </div>
+            </div>
+            <div class="input-group">
+                <label for="zoneType">參考類型</label>
+                <select id="zoneType">
+                    <option value="threshold">閾值配速（Tempo/Pace）</option>
+                    <option value="interval">間歇配速（Interval）</option>
+                    <option value="easy">輕鬆跑配速（Easy/Long）</option>
+                </select>
+            </div>
+        </div>
+        <div id="zoneResults" style="margin-top:14px"></div>
+    </div>
+</div>
+
+<script>
+// ====== DOM Helpers（統一 $ / $$）======
+const $ = (sel, ctx = document) => ctx.querySelector(sel);
+const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
+
+// ====== 工具：Debounce ======
+function debounce(fn, ms = 300) {
+    let timer;
+    return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(null, args), ms);
+    };
+}
+
+// ====== 工具：Input 驗證 ======
+function validateNumber(el, { min = -Infinity, max = Infinity, allowFloat = false } = {}) {
+    const raw = el.value.trim();
+    if (raw === '') { el.classList.remove('invalid'); return NaN; }
+    const val = allowFloat ? parseFloat(raw) : parseInt(raw, 10);
+    if (isNaN(val) || val < min || val > max) {
+        el.classList.add('invalid');
+        return NaN;
+    }
+    el.classList.remove('invalid');
+    return val;
+}
+
+// ====== 核心時間格式化（修復進位 bug）======
+function formatPace(totalSec) {
+    if (!isFinite(totalSec) || totalSec <= 0) return '-';
+    const m = Math.floor(totalSec / 60);
+    const s = Math.round(totalSec % 60);
+    return `${m}'${s.toString().padStart(2,'0')}"`;
+}
+
+function formatTime(totalSec) {
+    if (!isFinite(totalSec) || totalSec <= 0) return '-';
+    let s = Math.round(totalSec);
+    const h = Math.floor(s / 3600);
+    s %= 3600;
+    const m = Math.floor(s / 60);
+    s %= 60;
+    if (h > 0) return `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+    return `${m}:${s.toString().padStart(2,'0')}`;
+}
+
+function parseTime(str) {
+    str = String(str).trim();
+    if (!str) return 0;
+    if (str.includes("'")) {
+        const parts = str.split("'");
+        return (parseFloat(parts[0]) || 0) * 60 + (parseFloat(parts[1]) || 0);
+    }
+    if (str.includes(":")) {
+        const parts = str.split(":").map(x => parseFloat(x) || 0);
+        if (parts.length >= 3) return parts[0]*3600 + parts[1]*60 + parts[2];
+        return parts[0]*60 + parts[1];
+    }
+    return parseFloat(str) || 0;
+}
+
+// ====== PaceApp Class（封裝 state）======
+class PaceApp {
+    constructor() {
+        this.days = ['一','二','三','四','五','六','日'];
+        this.activeDay = 0;
+        this.parsedSchedule = [null,null,null,null,null,null,null];
+        this.LS_KEY = 'paceCalc_settings';
+        this.LS_HISTORY_KEY = 'paceCalc_history';
+
+        this.dayMap = {'一':0,'二':1,'三':2,'四':3,'五':4,'六':5,'日':6};
+        this.dayEngMap = {'mon':0,'tue':1,'wed':2,'thu':3,'fri':4,'sat':5,'sun':6};
+        this.dayRegex = /星期([一二三四五六日])|週([一二三四五六日])|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)/i;
+
+        this.riegelLabels = {'5':'5K','10':'10K','21.0975':'半馬','42.195':'全馬'};
+        this.riegelDists = [5, 10, 21.0975, 42.195];
+
+        // 常數
+        this.DEFAULT_EST_TIME = 600;
+        this.LSD_PER_KM_SEC = 390;
+        this.HISTORY_LIMIT = 26;
+
+        this.zoneLabels = {
+            easy:      this._zoneTag('E 恢復', 'zone-easy'),
+            tempo:     this._zoneTag('T 乳酸閾值', 'zone-tempo'),
+            interval:  this._zoneTag('I 間歇', 'zone-interval'),
+            recovery:  this._zoneTag('R 休息', 'zone-recovery'),
+            long:      this._zoneTag('L 長距離', 'zone-long'),
+            hr:        this._zoneTag('HR 心率', 'zone-easy'),
+            jog:       this._zoneTag('Jog', 'zone-easy'),
+            lsd:       this._zoneTag('L LSD', 'zone-long'),
+            unknown:   this._zoneTag('?', 'zone-easy'),
+        };
+
+        this.init();
+    }
+
+    // ====== 初始化 ======
+    init() {
+        this.loadAndApplySettings();
+        this.updateSchedule();
+        this.renderHistory();
+        this.bindEvents();
+        this.showLastSaved();
+    }
+
+    // ====== 事件綁定（統一用事件委託 + addEventListener）======
+    bindEvents() {
+        // 按鈕
+        $('#btnParse').addEventListener('click', () => this.parseSchedule());
+        $('#btnSample').addEventListener('click', () => this.loadSample());
+        $('#btnCalculate').addEventListener('click', () => this.calculate());
+        $('#btnClear').addEventListener('click', () => this.clearSchedule());
+        $('#btnSaveHistory').addEventListener('click', () => this.saveToHistory());
+
+        // 設定變更（用 debounce 避免過度觸發）
+        const settingChange = debounce(() => this.updateSchedule(), 400);
+        ['mafAge','rep400Target','rep400Sets','lsdDistance'].forEach(id => {
+            const el = $(`#${id}`);
+            if (el) el.addEventListener('input', settingChange);
+            if (el) el.addEventListener('change', () => this.updateSchedule());
+        });
+
+        // 課表 tabs — 事件委託
+        $('#scheduleTabs').addEventListener('click', (e) => {
+            const btn = e.target.closest('.tab-btn');
+            if (!btn) return;
+            this.activeDay = parseInt(btn.dataset.day, 10);
+            this.updateSchedule();
+        });
+
+        // 歷史列表 — 事件委託
+        $('#historyList').addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-history-idx]');
+            if (!btn) return;
+            const idx = parseInt(btn.dataset.historyIdx, 10);
+            const history = this.getHistory();
+            if (history[idx]) this.loadHistoryEntry(history[idx]);
+        });
+
+        // 即時計算：配速↔速度（debounce）
+        $('#p2sMin').addEventListener('input', debounce(() => this.paceToSpeed(), 200));
+        $('#p2sSec').addEventListener('input', debounce(() => this.paceToSpeed(), 200));
+        $('#s2pSpeed').addEventListener('input', debounce(() => this.speedToPace(), 200));
+
+        // 比賽預估（debounce）
+        $('#racePaceMin').addEventListener('input', debounce(() => this.estimateRace(), 200));
+        $('#racePaceSec').addEventListener('input', debounce(() => this.estimateRace(), 200));
+        $('#raceDistance').addEventListener('change', () => this.estimateRace());
+
+        // Riegel（debounce）
+        ['riegelH','riegelM','riegelS'].forEach(id => {
+            $(`#${id}`).addEventListener('input', debounce(() => this.calcRiegel(), 200));
+        });
+        $('#riegelDist1').addEventListener('change', () => this.calcRiegel());
+
+        // 分程配速（debounce）
+        ['splitH','splitM','splitS'].forEach(id => {
+            $(`#${id}`).addEventListener('input', debounce(() => this.calcSplit(), 200));
+        });
+        ['splitDist','splitUnit'].forEach(id => {
+            $(`#${id}`).addEventListener('input', () => this.calcSplit());
+            $(`#${id}`).addEventListener('change', () => this.calcSplit());
+        });
+
+        // 配速區間（debounce）
+        ['zonePaceMin','zonePaceSec'].forEach(id => {
+            $(`#${id}`).addEventListener('input', debounce(() => this.calcZones(), 200));
+        });
+        $('#zoneType').addEventListener('change', () => this.calcZones());
+
+        // Enter 快捷（排除 textarea）
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && document.activeElement.tagName !== 'TEXTAREA') {
+                this.calculate();
+            }
+        });
+    }
+
+    // ====== 課表解析 ======
+    parseSchedule() {
+        const text = $('#pasteInput').value.trim();
+        if (!text) {
+            this.showParseStatus('請先貼上課表', 'warn');
+            return;
+        }
+
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+        let parsedCount = 0;
+        const warnings = [];
+
+        for (const line of lines) {
+            let dayIdx = -1;
+            const dayMatch = line.match(this.dayRegex);
+            if (dayMatch) {
+                if (dayMatch[1]) dayIdx = this.dayMap[dayMatch[1]];
+                else if (dayMatch[2]) dayIdx = this.dayMap[dayMatch[2]];
+                else if (dayMatch[3]) dayIdx = this.dayEngMap[dayMatch[3].toLowerCase()];
+            }
+
+            let content = line.replace(this.dayRegex, '').trim();
+
+            if (/rest|休息|off/i.test(content)) {
+                this.parsedSchedule[dayIdx >= 0 ? dayIdx : 1] = { type: 'rest' };
+                parsedCount++;
+                continue;
+            }
+
+            if (dayIdx < 0) {
+                if (lines.length > 1) {
+                    warnings.push(`無法識別星期：${content.slice(0, 20)}`);
+                    continue;
+                }
+                dayIdx = 0;
+            }
+
+            const result = this._parseDayContent(content);
+            if (result) {
+                this.parsedSchedule[dayIdx] = result;
+                parsedCount++;
+            } else {
+                warnings.push(`週${this.days[dayIdx]} 解析不完整：${content.slice(0, 30)}`);
+            }
+        }
+
+        if (parsedCount === 0) {
+            const result = this._parseDayContent(text);
+            if (result) {
+                this.parsedSchedule[0] = result;
+                parsedCount = 1;
+            }
+        }
+
+        try { localStorage.setItem('paceCalc_lastPaste', text); } catch {}
+
+        if (parsedCount > 0) {
+            this.showParseStatus(
+                `✅ 成功解析 ${parsedCount} 天課表${warnings.length ? '（' + warnings.length + ' 條警告）' : ''}`,
+                'ok'
+            );
+            this.activeDay = this._findFirstNonRestDay();
+            this.updateSchedule();
+            this.saveToHistory();
+        } else {
+            this.showParseStatus('❌ 無法解析課表，請檢查格式', 'warn');
+        }
+    }
+
+    _parseDayContent(content) {
+        const segments = [];
+        let totalEstTime = this.DEFAULT_EST_TIME;
+        let zone = 'easy';
+        let name = '';
+
+        // 間歇訓練
+        const intervalMatch = content.match(/(\d+)(?:m|米)?\s*[\(（](\d[\d'":秒]*?)[\)）]\s*R\s*(\d[\d'":秒]*)/i);
+        if (intervalMatch) {
+            const repDist = parseInt(intervalMatch[1]);
+            const repTime = parseTime(intervalMatch[2]);
+            const restTime = parseTime(intervalMatch[3]);
+            const setsMatch = content.match(/x\s*(\d+)(?:\s*[-–~]\s*(\d+))?/i);
+            const setsMin = parseInt(setsMatch?.[1]) || 4;
+            const setsMax = parseInt(setsMatch?.[2]) || setsMin;
+            const sets = setsMax;
+
+            const bonusMatch = content.match(/\+\s*(\d+)(?:m|米)?[\(（](\d+%)?[\)）]/i);
+            let bonusSeg = null;
+            if (bonusMatch) {
+                const bonusDist = parseInt(bonusMatch[1]);
+                const bonusPct = bonusMatch[2] ? parseInt(bonusMatch[2]) / 100 : 1;
+                const bonusPaceSec = (repTime / (repDist / 1000)) / bonusPct;
+                bonusSeg = {
+                    desc: `✦ ${bonusDist}m（${bonusMatch[2] || '100%'} 配速）`,
+                    pace: formatPace(bonusPaceSec),
+                    unit: '/km',
+                    detail: `配速 ${formatPace(bonusPaceSec)}/km（間歇配速 ÷ ${bonusPct}）`
+                };
+            }
+
+            const rest2Match = content.match(/\+\s*\d+[^+]*?R\s*(\d[\d'":]*)/i);
+            const rest2Time = rest2Match ? parseTime(rest2Match[1]) : 0;
+
+            const repPaceSec = repTime / (repDist / 1000);
+            const restTimeStr = this._formatRest(restTime);
+
+            segments.push({
+                desc: `⚡ ${repDist}m × ${setsMin}${setsMax > setsMin ? '-' + setsMax : ''}組（目標 ${intervalMatch[2]}）`,
+                pace: formatPace(repPaceSec),
+                unit: '/km',
+                detail: `配速 ${formatPace(repPaceSec)}/km，時速 ${(3600 / (repPaceSec)).toFixed(1)} km/h`
+            });
+            segments.push({
+                desc: `😴 Rest ${restTimeStr}（組間休息）`,
+                pace: '—', unit: '', detail: '慢跑或步行恢復'
+            });
+            if (bonusSeg) segments.push(bonusSeg);
+            if (rest2Time > 0) {
+                segments.push({
+                    desc: `😴 Rest ${this._formatRest(rest2Time)}（大組間休息）`,
+                    pace: '—', unit: '', detail: '完全恢復'
+                });
+            }
+            totalEstTime = sets * (repTime + restTime) + this.DEFAULT_EST_TIME;
+            zone = 'interval';
+            name = `間歇 ${repDist}m`;
+            return { type: 'interval', name, zone, segments, totalEstTime, raw: content };
+        }
+
+        // Tempo
+        if (/tempo/i.test(content)) {
+            const parts = content.split(/\+/);
+            for (const part of parts) {
+                const trimmed = part.trim();
+                const jogMatch = trimmed.match(/(?:jog|慢跑)?\s*(\d+)\s*['']\s*(?:jog|慢跑)?/i);
+                if (jogMatch) {
+                    const mins = parseInt(jogMatch[1]);
+                    segments.push({ desc: `🚶 Jog ${mins}'`, pace: "6'00\"–6'30\"", unit: '/km', detail: '輕鬆熱身/緩和' });
+                    totalEstTime += mins * 60;
+                }
+                const tempoMatch = trimmed.match(/tempo\s*(\d+)\s*['']/i);
+                if (tempoMatch) {
+                    const mins = parseInt(tempoMatch[1]);
+                    segments.push({ desc: `🔥 Tempo ${mins}'`, pace: "4'45\"–5'15\"", unit: '/km', detail: '乳酸閾值配速' });
+                    totalEstTime += mins * 60;
+                }
+            }
+            if (segments.length === 0) {
+                const jogTimes = [...content.matchAll(/(\d+)\s*['']/g)].map(m => parseInt(m[1]));
+                if (jogTimes.length >= 2) {
+                    segments.push({ desc: `🚶 Jog ${jogTimes[0]}'`, pace: "6'00\"–6'30\"", unit: '/km', detail: '熱身' });
+                    segments.push({ desc: `🔥 Tempo ${jogTimes[1] || 20}'`, pace: "4'45\"–5'15\"", unit: '/km', detail: '乳酸閾值' });
+                    if (jogTimes[2]) segments.push({ desc: `🚶 Jog ${jogTimes[2]}'`, pace: "6'00\"–6'30\"", unit: '/km', detail: '緩和' });
+                }
+            }
+            zone = 'tempo';
+            name = 'Tempo Run';
+            return { type: 'tempo', name, zone, segments, totalEstTime, raw: content };
+        }
+
+        // HR 控制
+        const hrMatch = content.match(/(\d+)\s*['']?\s*[\(（]\s*hr\s*(\d+)\s*[\)）]/i);
+        if (hrMatch) {
+            const mins = parseInt(hrMatch[1]);
+            const hr = parseInt(hrMatch[2]);
+            totalEstTime = mins * 60;
+            segments.push({ desc: `❤️ ${mins}' (HR ≤ ${hr})`, pace: "5'30\"–6'30\"", unit: '/km', detail: `心率控制 ${hr} bpm` });
+            zone = 'easy';
+            name = `HR 控制跑 ${mins}'`;
+            return { type: 'hr', name, zone, segments, totalEstTime, raw: content };
+        }
+
+        // LSD
+        const lsdMatch = content.match(/(\d+)\s*[-–~]\s*(\d+)\s*km/i);
+        const lsdExactMatch = content.match(/(\d+(?:\.\d+)?)\s*km/i);
+        if (lsdMatch || lsdExactMatch) {
+            const distMin = lsdMatch ? parseInt(lsdMatch[1]) : parseFloat(lsdExactMatch[1]);
+            const distMax = lsdMatch ? parseInt(lsdMatch[2]) : distMin;
+            const dist = (distMin + distMax) / 2;
+            const mafMatch = content.match(/maf\s*(\d+)/i);
+            const hrNote = mafMatch ? ` (MAF ${mafMatch[1]})` : '';
+            totalEstTime = dist * this.LSD_PER_KM_SEC;
+            segments.push({
+                desc: `🏃 ${distMin}${distMax > distMin ? '-' + distMax : ''} km${hrNote}`,
+                pace: "5'30\"–6'30\"", unit: '/km',
+                detail: `HR ≤ ${mafMatch ? mafMatch[1] : this.getMAFHR()}，有氧耐力`
+            });
+            zone = 'long';
+            name = `LSD ${distMin}-${distMax}km`;
+            return { type: 'lsd', name, zone, segments, totalEstTime, raw: content };
+        }
+
+        // 簡單 Jog
+        const jogSimpleMatch = content.match(/(\d+)\s*['']?\s*(jog|慢跑)/i);
+        if (jogSimpleMatch) {
+            const mins = parseInt(jogSimpleMatch[1]);
+            totalEstTime = mins * 60;
+            segments.push({ desc: `🚶 ${mins}' Jog`, pace: "6'00\"–6'30\"", unit: '/km', detail: '輕鬆對話配速' });
+            zone = 'easy';
+            name = `恢復跑 ${mins}'`;
+            return { type: 'jog', name, zone, segments, totalEstTime, raw: content };
+        }
+
+        // 純時間
+        const timeOnlyMatch = content.match(/^(\d+)\s*['']$/);
+        if (timeOnlyMatch) {
+            const mins = parseInt(timeOnlyMatch[1]);
+            totalEstTime = mins * 60;
+            segments.push({ desc: `🏃 ${mins}' Run`, pace: "6'00\"–6'30\"", unit: '/km', detail: '輕鬆跑' });
+            zone = 'easy';
+            name = `跑步 ${mins}'`;
+            return { type: 'easy', name, zone, segments, totalEstTime, raw: content };
+        }
+
+        return {
+            type: 'unknown', name: content.slice(0, 40),
+            zone: 'easy',
+            segments: [{ desc: `📝 ${content}`, pace: '—', unit: '', detail: '未能自動解析配速，請用下方計算器手動計算' }],
+            totalEstTime: 0, raw: content
+        };
+    }
+
+    _formatRest(sec) {
+        if (sec >= 60) {
+            const m = Math.floor(sec / 60);
+            const s = Math.round(sec % 60);
+            return s > 0 ? `${m}'${s}"` : `${m}'`;
+        }
+        return `${Math.round(sec)}"`;
+    }
+
+    _findFirstNonRestDay() {
+        for (let i = 0; i < 7; i++) {
+            if (this.parsedSchedule[i] && this.parsedSchedule[i].type !== 'rest') return i;
+        }
+        return 0;
+    }
+
+    // ====== 課表顯示（修復 XSS：用 DOM 建立，唔用 innerHTML）======
+    updateSchedule() {
+        // 更新 MAF HR 顯示
+        $('#mafHR').textContent = this.getMAFHR();
+
+        // 渲染 tabs（用 DOM 建立）
+        const tabsEl = $('#scheduleTabs');
+        tabsEl.innerHTML = '';
+        this.days.forEach((d, i) => {
+            const w = this._getDayWorkout(i);
+            const hasWorkout = w && w.segments && w.segments.length > 0;
+            const isRest = w && w.zone === 'recovery';
+            const cls = (i === this.activeDay) ? 'active' : (isRest ? 'rest' : '');
+            const icon = isRest ? '🛌' : (hasWorkout ? '🏃' : '—');
+
+            const btn = document.createElement('button');
+            btn.className = `tab-btn ${cls}`;
+            btn.dataset.day = i;
+            btn.textContent = `${icon} 週${d}`;
+            tabsEl.appendChild(btn);
+        });
+
+        // 渲染內容（用 DOM 建立，修復 XSS）
+        const contentEl = $('#scheduleContent');
+        const workout = this._getDayWorkout(this.activeDay);
+
+        if (!workout || workout.segments.length === 0) {
+            contentEl.innerHTML = '';
+            const div = document.createElement('div');
+            div.style.cssText = 'text-align:center;padding:30px;color:#666';
+            div.textContent = workout ? workout.name : '🤷 尚未輸入課表 — 請在上方貼上課表';
+            contentEl.appendChild(div);
+            return;
+        }
+
+        contentEl.innerHTML = '';
+
+        // 標題行
+        const header = document.createElement('div');
+        header.style.cssText = 'margin-bottom:12px;display:flex;align-items:center;gap:10px';
+        const strong = document.createElement('strong');
+        strong.textContent = workout.name;
+        header.appendChild(strong);
+        // zone tag（用 DOM 建立，修復 XSS）
+        const zoneEl = this.zoneLabels[workout.zone];
+        if (zoneEl) {
+            header.appendChild(document.createTextNode(' '));
+            header.appendChild(zoneEl.cloneNode(true));
+        }
+        contentEl.appendChild(header);
+
+        // 每個 segment（用 DOM 建立）
+        workout.segments.forEach(s => {
+            const row = document.createElement('div');
+            row.className = 'segment';
+
+            const descSpan = document.createElement('span');
+            descSpan.className = 'desc';
+            descSpan.textContent = s.desc;  // ← textContent 防止 XSS
+            row.appendChild(descSpan);
+
+            const paceSpan = document.createElement('span');
+            paceSpan.className = 'pace';
+            paceSpan.textContent = s.pace;
+            if (s.unit) {
+                const small = document.createElement('small');
+                small.textContent = s.unit;
+                paceSpan.appendChild(small);
+            }
+            row.appendChild(paceSpan);
+            contentEl.appendChild(row);
+
+            if (s.detail) {
+                const detailDiv = document.createElement('div');
+                detailDiv.style.cssText = 'margin:-2px 12px 6px;font-size:0.8em;color:#555';
+                detailDiv.textContent = s.detail;  // ← textContent 防止 XSS
+                contentEl.appendChild(detailDiv);
+            }
+        });
+
+        // 預計時間
+        if (workout.totalEstTime > 0) {
+            const timeDiv = document.createElement('div');
+            timeDiv.style.cssText = 'margin-top:12px;padding:10px 14px;background:rgba(253,203,110,0.08);border-radius:8px;font-size:0.88em;color:#bbb';
+            timeDiv.textContent = `⏱️ 預計總訓練時間：${formatTime(workout.totalEstTime)}`;
+            contentEl.appendChild(timeDiv);
+        }
+    }
+
+    _getDayWorkout(dayIndex) {
+        const data = this.parsedSchedule[dayIndex];
+        if (!data) return null;
+        if (data.type === 'rest') return { name: 'Rest Day 🛌', zone: 'recovery', segments: [] };
+        return {
+            name: data.name,
+            zone: data.zone,
+            segments: data.segments,
+            totalEstTime: data.totalEstTime
+        };
+    }
+
+    // ====== 配速計算器 ======
+    calculate() {
+        const distEl = $('#calcDist');
+        const unit = $('#calcDistUnit').value;
+        const tMin = validateNumber($('#calcTimeMin'), { min: 0 });
+        const tSec = validateNumber($('#calcTimeSec'), { min: 0, max: 59 });
+
+        const dist = validateNumber(distEl, { min: 0.001 });
+        if (isNaN(dist)) { this._flashError(distEl, '請輸入距離'); return; }
+        if (isNaN(tMin) && isNaN(tSec)) { this._flashError($('#calcTimeMin'), '請輸入時間'); return; }
+
+        let distKm = dist;
+        if (unit === 'm') distKm = dist / 1000;
+        if (unit === 'mi') distKm = dist * 1.60934;
+
+        const totalTimeSec = (tMin || 0) * 60 + (tSec || 0);
+        if (totalTimeSec <= 0) return;
+
+        const paceSec = totalTimeSec / distKm;
+        const speedKmh = distKm / (totalTimeSec / 3600);
+        const paceMi = totalTimeSec / (distKm / 1.60934);
+
+        $('#calcResults').style.display = 'grid';
+        $('#resPace').textContent = formatPace(paceSec);
+        $('#resSpeed').textContent = speedKmh.toFixed(1);
+        $('#resTime').textContent = formatTime(totalTimeSec);
+        $('#resPaceMi').textContent = formatPace(paceMi);
+    }
+
+    // ====== 配速 ↔ 速度 ======
+    paceToSpeed() {
+        const m = validateNumber($('#p2sMin'), { min: 0 });
+        const s = validateNumber($('#p2sSec'), { min: 0, max: 59 });
+        if (isNaN(m) && isNaN(s)) { $('#p2sResult').textContent = '— km/h'; return; }
+        const totalSec = (m || 0) * 60 + (s || 0);
+        if (totalSec <= 0) { $('#p2sResult').textContent = '— km/h'; return; }
+        $('#p2sResult').textContent = `${(3600 / totalSec).toFixed(2)} km/h`;
+    }
+
+    speedToPace() {
+        const speed = validateNumber($('#s2pSpeed'), { min: 0, allowFloat: true });
+        if (isNaN(speed) || speed <= 0) { $('#s2pResult').textContent = '— min/km'; return; }
+        $('#s2pResult').textContent = `${formatPace(3600 / speed)} min/km`;
+    }
+
+    // ====== 比賽預估 ======
+    estimateRace() {
+        const m = validateNumber($('#racePaceMin'), { min: 0 });
+        const s = validateNumber($('#racePaceSec'), { min: 0, max: 59 });
+        const dist = parseFloat($('#raceDistance').value);
+        const totalSec = (m || 0) * 60 + (s || 0);
+        if (totalSec <= 0 || !dist) { $('#raceResult').textContent = '—'; return; }
+        const labels = { '5':'5K','10':'10K','21.0975':'半馬','42.195':'全馬' };
+        $('#raceResult').textContent = `${labels[String(dist)] || dist + 'km'} → ${formatTime(totalSec * dist)}`;
+    }
+
+    // ====== Riegel 公式（DOM 版，qwen2.5:14b 重構 + 吳八哥修正） ======
+    calcRiegel() {
+        const h = validateNumber($('#riegelH'), { min: 0 });
+        const m = validateNumber($('#riegelM'), { min: 0 });
+        const s = validateNumber($('#riegelS'), { min: 0, max: 59 });
+        const dist1 = parseFloat($('#riegelDist1').value);
+        const resultsEl = $('#riegelResults');
+        if (!dist1 || (h === 0 && m === 0 && s === 0)) {
+            resultsEl.replaceChildren();
+            return;
+        }
+        const t1 = (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
+        const knownLabel = this.riegelLabels[String(dist1)] || dist1 + 'km';
+
+        // 用 DocumentFragment 批次 append，效能好
+        const frag = document.createDocumentFragment();
+
+        const sectionDivider = document.createElement('div');
+        sectionDivider.className = 'section-divider';
+        sectionDivider.textContent = `「${knownLabel} → ${formatTime(t1)}」的等效成績`;
+        frag.appendChild(sectionDivider);
+
+        this.riegelDists.forEach(d => {
+            if (d === dist1) return;
+            const t2 = t1 * Math.pow(d / dist1, 1.06);
+            const label = this.riegelLabels[String(d)] || d + 'km';
+
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;justify-content:space-between;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.06)';
+
+            const spanLabel = document.createElement('span');
+            spanLabel.style.color = '#bbb';
+            spanLabel.textContent = label;
+
+            const spanTime = document.createElement('span');
+            spanTime.style.cssText = 'color:#a29bfe;font-weight:600;font-variant-numeric:tabular-nums';
+            spanTime.textContent = formatTime(Math.round(t2));
+
+            row.appendChild(spanLabel);
+            row.appendChild(spanTime);
+            frag.appendChild(row);
+        });
+
+        resultsEl.replaceChildren(frag);
+    }
+
+    // ====== 分程配速（DOM 版，qwen2.5:14b 重構） ======
+    calcSplit() {
+        const h = validateNumber($('#splitH'), { min: 0 });
+        const m = validateNumber($('#splitM'), { min: 0 });
+        const s = validateNumber($('#splitS'), { min: 0, max: 59 });
+        const dist = validateNumber($('#splitDist'), { min: 0.1, allowFloat: true });
+        const unit = $('#splitUnit').value;
+        if (!dist || (h === 0 && m === 0 && s === 0)) {
+            $('#splitResult').style.display = 'none';
+            $('#splitTable').style.display = 'none';
+            return;
+        }
+        let distKm = dist;
+        if (unit === 'mi') distKm = dist * 1.60934;
+        const totalSec = (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
+        const paceSecPerKm = totalSec / distKm;
+        const paceMinPerKm = formatPace(paceSecPerKm);
+
+        $('#splitResult').textContent =
+            `平均配速 ${unit === 'km' ? paceMinPerKm + '/km' : formatPace(paceSecPerKm * 1.60934) + '/mi'}（${formatTime(totalSec)} / ${dist}${unit}）`;
+        $('#splitResult').style.display = 'block';
+
+        const kmCount = Math.ceil(distKm);
+        const fragment = document.createDocumentFragment();
+        for (let i = 1; i <= kmCount; i++) {
+            const factor = i <= kmCount / 2 ? 1.02 : 0.98;
+            const thisPace = paceSecPerKm * factor;
+            const kmLabel = (i * 1).toFixed(1).replace('.0','');
+
+            const rowDiv = document.createElement('div');
+            rowDiv.style.cssText = 'display:flex;justify-content:space-between;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.08)';
+
+            const kmSpan = document.createElement('span');
+            kmSpan.textContent = `KM ${kmLabel}`;
+            kmSpan.style.color = '#888';
+            rowDiv.appendChild(kmSpan);
+
+            const paceSpan = document.createElement('span');
+            paceSpan.textContent = formatPace(thisPace);
+            paceSpan.style.cssText = 'color:#a29bfe;font-variant-numeric:tabular-nums';
+            rowDiv.appendChild(paceSpan);
+
+            const timeSpan = document.createElement('span');
+            timeSpan.textContent = `${formatTime(Math.round(thisPace))}/km`;
+            timeSpan.style.cssText = 'color:#666;font-size:0.85em';
+            rowDiv.appendChild(timeSpan);
+
+            fragment.appendChild(rowDiv);
+
+            if (unit === 'mi' && i % 1.60934 < 1) {
+                const miNum = (i / 1.60934).toFixed(1);
+                const miRowDiv = document.createElement('div');
+                miRowDiv.style.cssText = 'padding:2px 12px 2px 24px;font-size:0.82em;color:#74b9ff';
+                miRowDiv.textContent = `MI ${miNum} → ${formatPace(thisPace * 1.60934)}/mi`;
+                fragment.appendChild(miRowDiv);
+            }
+        }
+
+        $('#splitRows').replaceChildren(fragment);
+        $('#splitTable').style.display = 'block';
+    }
+
+    // ====== 配速區間（DOM 版，qwen2.5:14b 重構） ======
+    calcZones() {
+        const m = validateNumber($('#zonePaceMin'), { min: 0 });
+        const s = validateNumber($('#zonePaceSec'), { min: 0, max: 59 });
+        const type = $('#zoneType').value;
+        if (m === 0 && s === 0) {
+            $('#zoneResults').replaceChildren();
+            return;
+        }
+        const refPaceSec = (m || 0) * 60 + (s || 0);
+        let zones = [];
+        if (type === 'threshold') {
+            zones = [
+                { name: '恢復跑 E',       range: [refPaceSec*1.40, refPaceSec*1.55], icon: '💚' },
+                { name: '輕鬆跑 Easy',    range: [refPaceSec*1.15, refPaceSec*1.35], icon: '🚶' },
+                { name: '馬拉松配速 M',  range: [refPaceSec*1.01, refPaceSec*1.09], icon: '🏃' },
+                { name: '閾值 T（參考）', range: [refPaceSec*0.97, refPaceSec*1.03], icon: '🔥', highlight: true },
+                { name: '間歇 I',          range: [refPaceSec*0.82, refPaceSec*0.92], icon: '⚡' },
+                { name: '重複 R',          range: [refPaceSec*0.75, refPaceSec*0.85], icon: '💥' },
+            ];
+        } else if (type === 'interval') {
+            zones = [
+                { name: '恢復跑 E',       range: [refPaceSec*1.50, refPaceSec*1.70], icon: '💚' },
+                { name: '輕鬆跑 Easy',    range: [refPaceSec*1.25, refPaceSec*1.40], icon: '🚶' },
+                { name: '閾值 T',          range: [refPaceSec*1.08, refPaceSec*1.18], icon: '🔥' },
+                { name: '間歇 I（參考）', range: [refPaceSec*0.95, refPaceSec*1.05], icon: '⚡', highlight: true },
+                { name: '重複 R',          range: [refPaceSec*0.88, refPaceSec*0.98], icon: '💥' },
+            ];
+        } else {
+            zones = [
+                { name: '恢復跑 E（參考）', range: [refPaceSec*0.95, refPaceSec*1.08], icon: '💚', highlight: true },
+                { name: '輕鬆跑 Easy',    range: [refPaceSec*0.97, refPaceSec*1.03], icon: '🚶' },
+                { name: '馬拉松配速 M',  range: [refPaceSec*0.88, refPaceSec*0.95], icon: '🏃' },
+                { name: '閾值 T',          range: [refPaceSec*0.78, refPaceSec*0.88], icon: '🔥' },
+                { name: '間歇 I',          range: [refPaceSec*0.65, refPaceSec*0.78], icon: '⚡' },
+            ];
+        }
+        const container = $('#zoneResults');
+        container.replaceChildren();
+        const sectionDivider = document.createElement('div');
+        sectionDivider.className = 'section-divider';
+        sectionDivider.textContent = `配速區間（參考：${formatPace(refPaceSec)}/km）`;
+        container.appendChild(sectionDivider);
+
+        const fragment = document.createDocumentFragment();
+        zones.forEach(z => {
+            const bg = z.highlight ? 'rgba(108,92,231,0.12)' : 'transparent';
+            const zoneDiv = document.createElement('div');
+            zoneDiv.style.cssText = `display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:${bg};border-radius:6px;margin-bottom:2px`;
+
+            const spanName = document.createElement('span');
+            spanName.textContent = `${z.icon} ${z.name}`;
+            zoneDiv.appendChild(spanName);
+
+            const spanRange = document.createElement('span');
+            spanRange.style.cssText = 'color:#a29bfe;font-weight:600;font-variant-numeric:tabular-nums';
+            spanRange.textContent = `${formatPace(z.range[0])} – ${formatPace(z.range[1])}`;
+            zoneDiv.appendChild(spanRange);
+
+            fragment.appendChild(zoneDiv);
+        });
+        container.appendChild(fragment);
+
+        const speedKmh = 3600 / refPaceSec;
+        const referenceSpeed = document.createElement('div');
+        referenceSpeed.style.cssText = 'margin-top:8px;font-size:0.82em;color:#666;text-align:center';
+        referenceSpeed.textContent = `參考配速 ${formatPace(refPaceSec)}/km = ${speedKmh.toFixed(1)} km/h`;
+        container.appendChild(referenceSpeed);
+    }
+
+    // ====== localStorage ======
+    saveSettings() {
+        const data = {
+            mafAge: $('#mafAge').value,
+            rep400Target: $('#rep400Target').value,
+            rep400Sets: $('#rep400Sets').value,
+            lsdDistance: $('#lsdDistance').value,
+            pasteText: $('#pasteInput').value,
+            parsedSchedule: this.parsedSchedule,
+            savedAt: new Date().toISOString(),
+        };
+        try {
+            localStorage.setItem(this.LS_KEY, JSON.stringify(data));
+        } catch (e) {
+            console.warn('無法儲存設定：localStorage 可能已滿', e);
+        }
+    }
+
+    loadSettings() {
+        try {
+            const raw = localStorage.getItem(this.LS_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch { return null; }
+    }
+
+    applySettings(data) {
+        if (!data) return;
+        if (data.mafAge) $('#mafAge').value = data.mafAge;
+        if (data.rep400Target) $('#rep400Target').value = data.rep400Target;
+        if (data.rep400Sets) $('#rep400Sets').value = data.rep400Sets;
+        if (data.lsdDistance) $('#lsdDistance').value = data.lsdDistance;
+        if (data.pasteText) $('#pasteInput').value = data.pasteText;
+        if (data.parsedSchedule && data.parsedSchedule.some(s => s !== null)) {
+            this.parsedSchedule = data.parsedSchedule;
+        }
+    }
+
+    loadAndApplySettings() {
+        const data = this.loadSettings();
+        this.applySettings(data);
+    }
+
+    showLastSaved() {
+        const data = this.loadSettings();
+        if (data && data.savedAt) {
+            const d = new Date(data.savedAt);
+            $('#lastSaved').textContent =
+                `💾 上次保存：${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+        }
+    }
+
+    // ====== 歷史 ======
+    saveToHistory() {
+        const history = this.getHistory();
+        const weekStart = this._getWeekStart();
+        const existing = history.findIndex(h => h.weekStart === weekStart);
+        const entry = {
+            weekStart,
+            mafAge: $('#mafAge').value,
+            pasteText: $('#pasteInput').value,
+            parsedSchedule: this.parsedSchedule,
+            savedAt: new Date().toISOString(),
+        };
+        if (existing >= 0) history[existing] = entry;
+        else history.unshift(entry);
+        if (history.length > this.HISTORY_LIMIT) history.length = this.HISTORY_LIMIT;
+        try {
+            localStorage.setItem(this.LS_HISTORY_KEY, JSON.stringify(history));
+        } catch (e) {
+            console.warn('無法儲存歷史：localStorage 可能已滿', e);
+        }
+        this.renderHistory();
+        this.showToast('本週課表已儲存');
+    }
+
+    getHistory() {
+        try { return JSON.parse(localStorage.getItem(this.LS_HISTORY_KEY) || '[]'); }
+        catch { return []; }
+    }
+
+    _getWeekStart() {
+        const now = new Date();
+        const day = now.getDay() || 7;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() - day + 1);
+        return monday.toISOString().slice(0, 10);
+    }
+
+    _formatWeekLabel(ws) {
+        const d = new Date(ws);
+        const sun = new Date(d);
+        sun.setDate(d.getDate() + 6);
+        return `${d.getMonth()+1}/${d.getDate()} – ${sun.getMonth()+1}/${sun.getDate()}`;
+    }
+
+    loadHistoryEntry(entry) {
+        if (!confirm('載入舊課表會覆蓋目前課表，確定要載入嗎？')) return;
+        this.applySettings(entry);
+        if (entry.parsedSchedule) {
+            this.parsedSchedule = entry.parsedSchedule;
+        }
+        this.updateSchedule();
+        this.renderHistory();
+        this.showToast('已載入該週課表');
+    }
+
+    // ====== 歷史渲染（修復 XSS：用 DOM 建立）======
+    renderHistory() {
+        const history = this.getHistory();
+        const el = $('#historyList');
+        if (!el) return;
+        const currentWeek = this._getWeekStart();
+
+        if (history.length === 0) {
+            el.innerHTML = '<div style="text-align:center;padding:20px;color:#555">尚無歷史記錄，貼上課表後自動保存</div>';
+            return;
+        }
+
+        el.innerHTML = '';
+        history.forEach((h, idx) => {
+            const isCurrent = h.weekStart === currentWeek;
+            const bg = isCurrent ? 'rgba(108,92,231,0.12)' : 'rgba(0,0,0,0.15)';
+
+            // 建立摘要（安全處理 user data）
+            const summaryParts = (h.parsedSchedule || []).map(d => {
+                if (!d) return '';
+                if (d.type === 'rest') return '';
+                // 只用 name（硬編碼或由 parser 產生，不含 user 原始 HTML）
+                return d.name || d.type;
+            }).filter(Boolean);
+            const summary = summaryParts.join(' / ');
+
+            const card = document.createElement('div');
+            card.style.cssText = `padding:10px 14px;background:${bg};border-radius:8px;margin-bottom:6px`;
+
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;justify-content:space-between;align-items:center';
+
+            const left = document.createElement('div');
+            const weekLabel = document.createElement('span');
+            weekLabel.style.cssText = 'color:#a29bfe;font-weight:600';
+            weekLabel.textContent = this._formatWeekLabel(h.weekStart);
+            left.appendChild(weekLabel);
+            if (isCurrent) {
+                const badge = document.createElement('span');
+                badge.className = 'zone-tag zone-tempo';
+                badge.style.marginLeft = '8px';
+                badge.textContent = '本週';
+                left.appendChild(badge);
+            }
+            row.appendChild(left);
+
+            const loadBtn = document.createElement('button');
+            loadBtn.dataset.historyIdx = idx;
+            loadBtn.style.cssText = 'padding:4px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:#ccc;cursor:pointer;font-size:0.8em';
+            loadBtn.textContent = '載入';
+            row.appendChild(loadBtn);
+
+            card.appendChild(row);
+
+            if (summary) {
+                const summaryDiv = document.createElement('div');
+                summaryDiv.style.cssText = 'color:#666;font-size:0.82em;margin-top:4px';
+                summaryDiv.textContent = summary;  // ← textContent 防止 XSS
+                card.appendChild(summaryDiv);
+            }
+
+            el.appendChild(card);
+        });
+    }
+
+    // ====== 工具 ======
+    getMAFHR() {
+        return 180 - (parseInt($('#mafAge').value) || 30);
+    }
+
+    showParseStatus(msg, type) {
+        const el = $('#parseStatus');
+        el.innerHTML = '';
+        const span = document.createElement('span');
+        span.className = `parse-status ${type === 'ok' ? 'parse-ok' : 'parse-warn'}`;
+        span.textContent = msg;
+        el.appendChild(span);
+    }
+
+    loadSample() {
+        $('#pasteInput').value =
+`星期一 400(1'28)R1'30+200(90%)R5'x4-5
+星期二 rest day
+星期三 jog10'+tempo 20'+10'jog
+星期四 30'jog
+星期五 60'(hr135)
+星期六 18-20km(maf180)`;
+        this.parseSchedule();
+    }
+
+    clearSchedule() {
+        if (!confirm('確定要清除本週全部課表？')) return;
+        this.parsedSchedule = [null,null,null,null,null,null,null];
+        $('#pasteInput').value = '';
+        this.activeDay = 0;
+        this.updateSchedule();
+        this.saveSettings();
+        this.showToast('課表已清除');
+    }
+
+    showToast(msg) {
+        const existing = document.querySelector('.toast-msg');
+        if (existing) existing.remove();
+        const t = document.createElement('div');
+        t.textContent = msg;  // ← textContent 防止 XSS
+        t.className = 'toast-msg';
+        t.style.cssText = 'position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#6c5ce7;color:#fff;padding:10px 24px;border-radius:20px;font-size:0.9em;z-index:9999;animation:fadeInUp 0.3s ease';
+        document.body.appendChild(t);
+        // 動畫結束後等 1.5s 再淡出，然後用 transitionend 移除
+        setTimeout(() => {
+            t.style.opacity = '0';
+            t.style.transition = 'opacity 0.3s';
+            t.addEventListener('transitionend', () => t.remove(), { once: true });
+        }, 1500);
+    }
+
+    _flashError(el, msg) {
+        el.classList.add('invalid');
+        this.showToast(msg);
+        setTimeout(() => el.classList.remove('invalid'), 2000);
+    }
+
+    _zoneTag(text, cls) {
+        const span = document.createElement('span');
+        span.className = `zone-tag ${cls}`;
+        span.textContent = text;
+        return span;
+    }
+}
+
+// ====== 啟動 ======
+const app = new PaceApp();
+</script>
+</body>
+</html>
