@@ -127,11 +127,18 @@
     const STORAGE_KEY = 'friendFeeTracker';
     let transactions = [];
 
+    // 本地今日日期（唔好用 valueAsDate：嗰個跟 UTC，朝早時段會變尋日）
+    function todayLocal() {
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+
     // Init
     document.addEventListener('DOMContentLoaded', () => {
       loadData();
-      document.getElementById('expenseDate').valueAsDate = new Date();
-      document.getElementById('repayDate').valueAsDate = new Date();
+      document.getElementById('expenseDate').value = todayLocal();
+      document.getElementById('repayDate').value = todayLocal();
     });
 
     function loadData() {
@@ -174,7 +181,7 @@
 
       document.getElementById('expenseAmount').value = '';
       document.getElementById('expenseDesc').value = '';
-      document.getElementById('expenseDate').valueAsDate = new Date();
+      document.getElementById('expenseDate').value = todayLocal();
 
       saveData();
       render();
@@ -198,7 +205,7 @@
 
       document.getElementById('repayAmount').value = '';
       document.getElementById('repayDesc').value = '';
-      document.getElementById('repayDate').valueAsDate = new Date();
+      document.getElementById('repayDate').value = todayLocal();
 
       saveData();
       render();
@@ -286,9 +293,18 @@
       reader.onload = (e) => {
         try {
           const data = JSON.parse(e.target.result);
-          if (data.transactions) {
+          if (Array.isArray(data.transactions)) {
             if (confirm('匯入後會取代現有資料，確定嗎？')) {
-              transactions = data.transactions;
+              // 驗證＋正規化：壞記錄跳過，金額轉返數字，避免 render 壞頁
+              transactions = data.transactions
+                .filter(t => t && (t.type === 'expense' || t.type === 'repayment') && isFinite(parseFloat(t.amount)) && typeof t.date === 'string')
+                .map((t, i) => ({
+                  type: t.type,
+                  amount: parseFloat(t.amount),
+                  desc: String(t.desc ?? ''),
+                  date: t.date,
+                  id: Number(t.id) || (Date.now() + i)
+                }));
               document.getElementById('friendName').value = data.friendName || '';
               saveData();
               render();
