@@ -59,20 +59,34 @@
     .clear-btn button { background: transparent; color: #999; border: 1px solid #ddd; padding: 10px 20px; font-size: 14px; }
     .clear-btn button:hover { color: #ff6b6b; border-color: #ff6b6b; }
 
-    .friend-name { text-align: center; margin-bottom: 20px; }
+    .friend-name { text-align: center; margin-bottom: 8px; }
     .friend-name input { text-align: center; font-size: 20px; font-weight: bold; border: none; border-bottom: 2px dashed #ddd; border-radius: 0; padding: 8px; background: transparent; }
     .friend-name input:focus { border-color: #667eea; }
+
+    .profile-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .profile-chip { flex: none; padding: 9px 16px; border-radius: 999px; background: white; border: 2px solid #e8e8e8; font-size: 15px; font-weight: 600; color: #666; cursor: pointer; transition: all 0.2s; }
+    .profile-chip.active { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-color: transparent; }
+    .profile-chip.add { border-style: dashed; color: #667eea; background: transparent; }
+
+    .profile-tools { text-align: center; margin-bottom: 20px; }
+    .profile-tools button { flex: none; background: transparent; color: #999; border: none; padding: 4px 10px; font-size: 13px; font-weight: normal; }
+    .profile-tools button:hover { color: #ff6b6b; }
   </style>
 </head>
 <body>
   <div class="container">
+    <div class="profile-bar" id="profileBar"></div>
+
     <div class="balance-card">
-      <div class="balance-label">朋友欠你</div>
+      <div class="balance-label" id="balanceLabel">朋友欠你</div>
       <div class="balance-amount" id="balance">$0.00</div>
     </div>
 
     <div class="friend-name">
       <input type="text" id="friendName" placeholder="朋友名稱" onchange="saveFriendName()">
+    </div>
+    <div class="profile-tools">
+      <button onclick="deleteProfile()">刪除此人</button>
     </div>
 
     <div class="tab-bar">
@@ -125,6 +139,8 @@
 
   <script>
     const STORAGE_KEY = 'friendFeeTracker';
+    let profiles = [];
+    let activeProfileId = null;
     let transactions = [];
 
     // 本地今日日期（唔好用 valueAsDate：嗰個跟 UTC，朝早時段會變尋日）
@@ -134,6 +150,20 @@
       return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
     }
 
+    function newProfile(name, txs) {
+      return { id: Date.now() + Math.floor(Math.random() * 1000), name: name || '', transactions: txs || [] };
+    }
+
+    function currentProfile() {
+      return profiles.find(p => p.id === activeProfileId) || profiles[0] || null;
+    }
+
+    // 將全域 transactions 同步返入目前 profile（deleteTransaction 會成個換陣列）
+    function syncCurrent() {
+      const p = currentProfile();
+      if (p) p.transactions = transactions;
+    }
+
     // Init
     document.addEventListener('DOMContentLoaded', () => {
       loadData();
@@ -141,26 +171,118 @@
       document.getElementById('repayDate').value = todayLocal();
     });
 
+    // 驗證＋正規化交易清單：壞記錄跳過，金額轉返數字（匯入同舊資料遷移共用）
+    function normalizeTransactions(list) {
+      if (!Array.isArray(list)) return [];
+      return list
+        .filter(t => t && (t.type === 'expense' || t.type === 'repayment') && isFinite(parseFloat(t.amount)) && typeof t.date === 'string')
+        .map((t, i) => ({
+          type: t.type,
+          amount: parseFloat(t.amount),
+          desc: String(t.desc ?? ''),
+          date: t.date,
+          id: Number(t.id) || (Date.now() + i)
+        }));
+    }
+
     function loadData() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const data = JSON.parse(saved);
-        transactions = data.transactions || [];
-        document.getElementById('friendName').value = data.friendName || '';
+        try {
+          const data = JSON.parse(saved);
+          if (Array.isArray(data.profiles) && data.profiles.length > 0) {
+            // 新格式：多 profile
+            profiles = data.profiles
+              .filter(p => p && typeof p === 'object')
+              .map((p, i) => ({
+                id: Number(p.id) || (Date.now() + i),
+                name: String(p.name ?? ''),
+                transactions: normalizeTransactions(p.transactions)
+              }));
+            activeProfileId = profiles.some(p => p.id === Number(data.activeProfileId))
+              ? Number(data.activeProfileId) : profiles[0].id;
+          } else if (Array.isArray(data.transactions) || typeof data.friendName === 'string') {
+            // 舊格式：單一朋友 → 遷移做第一個 profile，記錄原封不動
+            const p = newProfile(String(data.friendName || ''), normalizeTransactions(data.transactions));
+            profiles = [p];
+            activeProfileId = p.id;
+          }
+        } catch (err) {
+          profiles = [];
+        }
       }
+      if (profiles.length === 0) {
+        const p = newProfile('', []);
+        profiles = [p];
+        activeProfileId = p.id;
+      }
+      const cur = currentProfile();
+      activeProfileId = cur.id;
+      transactions = cur.transactions;
+      document.getElementById('friendName').value = cur.name || '';
       render();
     }
 
     function saveData() {
+      syncCurrent();
+      const cur = currentProfile();
+      if (cur) cur.name = document.getElementById('friendName').value;
       const data = {
-        friendName: document.getElementById('friendName').value,
-        transactions: transactions
+        profiles: profiles,
+        activeProfileId: activeProfileId
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }
 
     function saveFriendName() {
       saveData();
+      renderProfiles();
+      renderBalance();
+    }
+
+    function switchProfile(id) {
+      if (id === activeProfileId) return;
+      saveData(); // 先存好舊 profile 嘅名同記錄
+      activeProfileId = id;
+      const cur = currentProfile();
+      transactions = cur.transactions;
+      document.getElementById('friendName').value = cur.name || '';
+      saveData();
+      render();
+    }
+
+    function addProfile() {
+      const name = prompt('新朋友名稱（可留空，之後再改）：', '');
+      if (name === null) return;
+      saveData();
+      const p = newProfile(name.trim(), []);
+      profiles.push(p);
+      activeProfileId = p.id;
+      transactions = p.transactions;
+      document.getElementById('friendName').value = p.name;
+      saveData();
+      render();
+    }
+
+    function deleteProfile() {
+      const cur = currentProfile();
+      if (!cur) return;
+      const label = cur.name || '（未命名）';
+      if (profiles.length <= 1) {
+        if (!confirm(`「${label}」係唯一一個，刪除會清晒佢嘅 ${cur.transactions.length} 筆記錄，確定嗎？`)) return;
+        const p = newProfile('', []);
+        profiles = [p];
+        activeProfileId = p.id;
+      } else {
+        if (!confirm(`確定刪除「${label}」？佢嘅 ${cur.transactions.length} 筆記錄會一併刪除。`)) return;
+        profiles = profiles.filter(p => p.id !== cur.id);
+        activeProfileId = profiles[0].id;
+      }
+      const next = currentProfile();
+      transactions = next.transactions;
+      document.getElementById('friendName').value = next.name || '';
+      saveData();
+      render();
     }
 
     function addExpense() {
@@ -218,17 +340,32 @@
       render();
     }
 
-    function render() {
-      // Calculate balance
+    function renderProfiles() {
+      const barEl = document.getElementById('profileBar');
+      barEl.innerHTML = profiles.map((p, i) => `
+        <div class="profile-chip ${p.id === activeProfileId ? 'active' : ''}" onclick="switchProfile(${p.id})">${escapeHtml(p.name) || '朋友 ' + (i + 1)}</div>
+      `).join('') + '<div class="profile-chip add" onclick="addProfile()">＋ 新增</div>';
+    }
+
+    function renderBalance() {
       let balance = 0;
       transactions.forEach(t => {
         if (t.type === 'expense') balance += t.amount;
         else balance -= t.amount;
       });
 
+      const cur = currentProfile();
+      const labelEl = document.getElementById('balanceLabel');
+      labelEl.textContent = (cur && cur.name ? cur.name : '朋友') + '欠你';
+
       const balanceEl = document.getElementById('balance');
       balanceEl.textContent = '$' + balance.toFixed(2);
       balanceEl.className = 'balance-amount ' + (balance >= 0 ? 'positive' : 'negative');
+    }
+
+    function render() {
+      renderProfiles();
+      renderBalance();
 
       // Render history
       const listEl = document.getElementById('historyList');
@@ -272,9 +409,10 @@
     }
 
     function exportData() {
+      saveData();
       const data = {
-        friendName: document.getElementById('friendName').value,
-        transactions: transactions,
+        profiles: profiles,
+        activeProfileId: activeProfileId,
         exportDate: new Date().toISOString()
       };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -293,19 +431,28 @@
       reader.onload = (e) => {
         try {
           const data = JSON.parse(e.target.result);
-          if (Array.isArray(data.transactions)) {
+          let newProfiles = null;
+          if (Array.isArray(data.profiles) && data.profiles.length > 0) {
+            // 新格式備份
+            newProfiles = data.profiles
+              .filter(p => p && typeof p === 'object')
+              .map((p, i) => ({
+                id: Number(p.id) || (Date.now() + i),
+                name: String(p.name ?? ''),
+                transactions: normalizeTransactions(p.transactions)
+              }));
+          } else if (Array.isArray(data.transactions)) {
+            // 舊格式備份（單一朋友）→ 轉做一個 profile
+            newProfiles = [newProfile(String(data.friendName || ''), normalizeTransactions(data.transactions))];
+          }
+          if (newProfiles && newProfiles.length > 0) {
             if (confirm('匯入後會取代現有資料，確定嗎？')) {
-              // 驗證＋正規化：壞記錄跳過，金額轉返數字，避免 render 壞頁
-              transactions = data.transactions
-                .filter(t => t && (t.type === 'expense' || t.type === 'repayment') && isFinite(parseFloat(t.amount)) && typeof t.date === 'string')
-                .map((t, i) => ({
-                  type: t.type,
-                  amount: parseFloat(t.amount),
-                  desc: String(t.desc ?? ''),
-                  date: t.date,
-                  id: Number(t.id) || (Date.now() + i)
-                }));
-              document.getElementById('friendName').value = data.friendName || '';
+              profiles = newProfiles;
+              activeProfileId = profiles.some(p => p.id === Number(data.activeProfileId))
+                ? Number(data.activeProfileId) : profiles[0].id;
+              const cur = currentProfile();
+              transactions = cur.transactions;
+              document.getElementById('friendName').value = cur.name || '';
               saveData();
               render();
               alert('匯入成功！');
