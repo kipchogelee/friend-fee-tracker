@@ -131,7 +131,8 @@
       </div>
       <div class="clear-btn">
         <button onclick="exportData()">📤 匯出資料</button>
-        <button onclick="document.getElementById('importFile').click()">📥 匯入資料</button>
+        <button onclick="startImport('append')">📥 匯入（新增）</button>
+        <button onclick="startImport('replace')">📥 匯入（取代全部）</button>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
       </div>
     </div>
@@ -424,42 +425,65 @@
       URL.revokeObjectURL(url);
     }
 
+    let importMode = 'append';
+
+    function startImport(mode) {
+      importMode = mode;
+      document.getElementById('importFile').click();
+    }
+
+    // 將備份檔內容（新格式 profiles／舊格式單一朋友）轉成 profile 清單；格式唔啱回傳 null
+    function parseImportProfiles(data) {
+      if (data && Array.isArray(data.profiles) && data.profiles.length > 0) {
+        const list = data.profiles
+          .filter(p => p && typeof p === 'object')
+          .map((p, i) => ({
+            id: Number(p.id) || (Date.now() + i),
+            name: String(p.name ?? ''),
+            transactions: normalizeTransactions(p.transactions)
+          }));
+        return list.length > 0 ? list : null;
+      }
+      if (data && Array.isArray(data.transactions)) {
+        // 舊格式備份（單一朋友）→ 轉做一個 profile
+        return [newProfile(String(data.friendName || ''), normalizeTransactions(data.transactions))];
+      }
+      return null;
+    }
+
     function importData(event) {
       const file = event.target.files[0];
       if (!file) return;
+      const mode = importMode;
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
           const data = JSON.parse(e.target.result);
-          let newProfiles = null;
-          if (Array.isArray(data.profiles) && data.profiles.length > 0) {
-            // 新格式備份
-            newProfiles = data.profiles
-              .filter(p => p && typeof p === 'object')
-              .map((p, i) => ({
-                id: Number(p.id) || (Date.now() + i),
-                name: String(p.name ?? ''),
-                transactions: normalizeTransactions(p.transactions)
-              }));
-          } else if (Array.isArray(data.transactions)) {
-            // 舊格式備份（單一朋友）→ 轉做一個 profile
-            newProfiles = [newProfile(String(data.friendName || ''), normalizeTransactions(data.transactions))];
-          }
-          if (newProfiles && newProfiles.length > 0) {
-            if (confirm('匯入後會取代現有資料，確定嗎？')) {
-              profiles = newProfiles;
-              activeProfileId = profiles.some(p => p.id === Number(data.activeProfileId))
-                ? Number(data.activeProfileId) : profiles[0].id;
-              const cur = currentProfile();
-              transactions = cur.transactions;
-              document.getElementById('friendName').value = cur.name || '';
-              saveData();
-              render();
-              alert('匯入成功！');
-            }
+          const imported = parseImportProfiles(data);
+          if (!imported) { alert('檔案格式不正確'); return; }
+          const txCount = imported.reduce((s, p) => s + p.transactions.length, 0);
+          if (mode === 'replace') {
+            if (!confirm('取代匯入會刪晒現有全部資料，確定嗎？')) return;
+            profiles = imported;
+            activeProfileId = profiles.some(p => p.id === Number(data.activeProfileId))
+              ? Number(data.activeProfileId) : profiles[0].id;
           } else {
-            alert('檔案格式不正確');
+            // 新增匯入：換新 id 避免同現有 profile 撞；順手清走冇名冇記錄嘅空白殼
+            profiles = profiles.filter(p => p.name || p.transactions.length > 0);
+            const maxExistingId = profiles.reduce((m, p) => Math.max(m, p.id || 0), 0);
+            const base = Math.max(Date.now(), maxExistingId);
+            imported.forEach((p, i) => { p.id = base + i + 1; });
+            profiles = profiles.concat(imported);
+            activeProfileId = imported[0].id;
           }
+          const cur = currentProfile();
+          transactions = cur.transactions;
+          document.getElementById('friendName').value = cur.name || '';
+          saveData();
+          render();
+          alert(mode === 'replace'
+            ? '匯入成功（已取代全部資料）！'
+            : `匯入成功！新增 ${imported.length} 位朋友、共 ${txCount} 筆記錄，現有資料冇受影響。`);
         } catch (err) {
           alert('匯入失敗：' + err.message);
         }
